@@ -36,7 +36,7 @@ jobs:
 
   test: &test
     description: |
-      Run tests with gotestsum.
+      Run tests with gotestsum!
     parameters:
       executor:
         type: executor
