@@ -12,7 +12,6 @@ import (
 	"strings"
 	"sync"
 
-	rice "github.com/GeertJohan/go.rice"
 	logging "github.com/ipfs/go-log"
 	"github.com/minio/blake2b-simd"
 	"go.uber.org/multierr"
@@ -47,14 +46,13 @@ func getParamDir() string {
 	return os.Getenv(dirEnv)
 }
 
-func GetParams(storageSize uint64) error {
+func GetParams(paramBytes []byte, storageSize uint64) error {
 	if err := os.Mkdir(getParamDir(), 0755); err != nil && !os.IsExist(err) {
 		return err
 	}
 
 	var params map[string]paramFile
 
-	paramBytes := rice.MustFindBox("proof-params").MustBytes("parameters.json")
 	if err := json.Unmarshal(paramBytes, &params); err != nil {
 		return err
 	}
