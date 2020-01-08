@@ -3,7 +3,6 @@ module github.com/filecoin-project/go-paramfetch
 go 1.13
 
 require (
-	github.com/GeertJohan/go.rice v1.0.0
 	github.com/fatih/color v1.8.0 // indirect
 	github.com/ipfs/go-log v1.0.0
 	github.com/mattn/go-colorable v0.1.4 // indirect
