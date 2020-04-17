@@ -22,7 +22,7 @@ import (
 var log = logging.Logger("build")
 
 //const gateway = "http://198.211.99.118/ipfs/"
-const gateway = "https://ipfs.io/ipfs/"
+const gateway = "https://proofs.filecoin.io/"
 const paramdir = "/var/tmp/filecoin-proof-parameters"
 const dirEnv = "FIL_PROOFS_PARAMETER_CACHE"
 
@@ -89,7 +89,7 @@ func (ft *fetch) maybeFetchAsync(name string, info paramFile) {
 		ft.fetchLk.Lock()
 		defer ft.fetchLk.Unlock()
 
-		if err := doFetch(path, info); err != nil {
+		if err := doFetch(path, name); err != nil {
 			ft.errs = append(ft.errs, xerrors.Errorf("fetching file %s failed: %w", path, err))
 			return
 		}
@@ -136,7 +136,7 @@ func (ft *fetch) wait() error {
 	return multierr.Combine(ft.errs...)
 }
 
-func doFetch(out string, info paramFile) error {
+func doFetch(out, name string) error {
 	gw := os.Getenv("IPFS_GATEWAY")
 	if gw == "" {
 		gw = gateway
@@ -155,7 +155,7 @@ func doFetch(out string, info paramFile) error {
 	}
 	header := http.Header{}
 	header.Set("Range", "bytes="+strconv.FormatInt(fStat.Size(), 10)+"-")
-	url, err := url.Parse(gw + info.Cid)
+	url, err := url.Parse(gw + name)
 	if err != nil {
 		return err
 	}
