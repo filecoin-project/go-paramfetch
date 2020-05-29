@@ -174,7 +174,8 @@ func doFetch(out string, info paramFile) error {
 	}
 	defer resp.Body.Close()
 
-	bar := pb.New64(resp.ContentLength)
+	bar := pb.New64(fStat.Size() + resp.ContentLength)
+	bar.Set64(fStat.Size())
 	bar.Units = pb.U_BYTES
 	bar.ShowSpeed = true
 	bar.Start()
