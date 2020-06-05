@@ -1,6 +1,7 @@
 package build
 
 import (
+	"context"
 	"encoding/hex"
 	"encoding/json"
 	"io"
@@ -46,7 +47,7 @@ func getParamDir() string {
 	return os.Getenv(dirEnv)
 }
 
-func GetParams(paramBytes []byte, storageSize uint64) error {
+func GetParams(ctx context.Context, paramBytes []byte, storageSize uint64) error {
 	if err := os.Mkdir(getParamDir(), 0755); err != nil && !os.IsExist(err) {
 		return err
 	}
@@ -64,13 +65,13 @@ func GetParams(paramBytes []byte, storageSize uint64) error {
 			continue
 		}
 
-		ft.maybeFetchAsync(name, info)
+		ft.maybeFetchAsync(ctx, name, info)
 	}
 
-	return ft.wait()
+	return ft.wait(ctx)
 }
 
-func (ft *fetch) maybeFetchAsync(name string, info paramFile) {
+func (ft *fetch) maybeFetchAsync(ctx context.Context, name string, info paramFile) {
 	ft.wg.Add(1)
 
 	go func() {
@@ -89,7 +90,7 @@ func (ft *fetch) maybeFetchAsync(name string, info paramFile) {
 		ft.fetchLk.Lock()
 		defer ft.fetchLk.Unlock()
 
-		if err := doFetch(path, info); err != nil {
+		if err := doFetch(ctx, path, info); err != nil {
 			ft.errs = append(ft.errs, xerrors.Errorf("fetching file %s failed: %w", path, err))
 			return
 		}
@@ -131,12 +132,25 @@ func (ft *fetch) checkFile(path string, info paramFile) error {
 	return xerrors.Errorf("checksum mismatch in param file %s, %s != %s", path, strSum, info.Digest)
 }
 
-func (ft *fetch) wait() error {
-	ft.wg.Wait()
+func (ft *fetch) wait(ctx context.Context) error {
+	waitChan := make(chan struct{}, 1)
+
+	go func() {
+		ft.wg.Wait()
+		waitChan <- struct{}{}
+	}()
+
+	select {
+	case <-ctx.Done():
+		log.Infof("context closed... shutting down")
+	case <-waitChan:
+		log.Infof("parameter and key-fetching complete")
+	}
+
 	return multierr.Combine(ft.errs...)
 }
 
-func doFetch(out string, info paramFile) error {
+func doFetch(ctx context.Context, out string, info paramFile) error {
 	gw := os.Getenv("IPFS_GATEWAY")
 	if gw == "" {
 		gw = gateway
@@ -161,14 +175,14 @@ func doFetch(out string, info paramFile) error {
 	}
 	log.Infof("GET %s", url)
 
-	req := http.Request{
-		Method: "GET",
-		URL:    url,
-		Header: header,
-		Close:  true,
+	req, err := http.NewRequestWithContext(ctx, "GET", url.String(), nil)
+	if err != nil {
+		return err
 	}
+	req.Close = true
+	req.Header = header
 
-	resp, err := http.DefaultClient.Do(&req)
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return err
 	}
