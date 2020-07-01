@@ -27,6 +27,9 @@ const gateway = "https://proofs.filecoin.io/ipfs/"
 const paramdir = "/var/tmp/filecoin-proof-parameters"
 const dirEnv = "FIL_PROOFS_PARAMETER_CACHE"
 
+var checked = map[string]struct{}{}
+var checkedLk sync.Mutex
+
 type paramFile struct {
 	Cid        string `json:"cid"`
 	Digest     string `json:"digest"`
@@ -111,6 +114,13 @@ func (ft *fetch) checkFile(path string, info paramFile) error {
 		return nil
 	}
 
+	checkedLk.Lock()
+	_, ok := checked[path]
+	checkedLk.Unlock()
+	if ok {
+		return nil
+	}
+
 	f, err := os.Open(path)
 	if err != nil {
 		return err
@@ -126,6 +136,11 @@ func (ft *fetch) checkFile(path string, info paramFile) error {
 	strSum := hex.EncodeToString(sum[:16])
 	if strSum == info.Digest {
 		log.Infof("Parameter file %s is ok", path)
+
+		checkedLk.Lock()
+		checked[path] = struct{}{}
+		checkedLk.Unlock()
+
 		return nil
 	}
 
@@ -136,8 +151,8 @@ func (ft *fetch) wait(ctx context.Context) error {
 	waitChan := make(chan struct{}, 1)
 
 	go func() {
+		defer close(waitChan)
 		ft.wg.Wait()
-		waitChan <- struct{}{}
 	}()
 
 	select {
