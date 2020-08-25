@@ -3,6 +3,7 @@ module github.com/filecoin-project/go-paramfetch
 go 1.22
 
 require (
+	github.com/cheggaaa/pb/v3 v3.1.5
 	github.com/ipfs/go-fs-lock v0.0.7
 	github.com/ipfs/go-log/v2 v2.5.1
 	github.com/stretchr/testify v1.9.0
@@ -10,10 +11,10 @@ require (
 	golang.org/x/crypto v0.26.0
 	golang.org/x/sync v0.8.0
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da
-	gopkg.in/cheggaaa/pb.v1 v1.0.28
 )
 
 require (
+	github.com/VividCortex/ewma v1.2.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/fatih/color v1.17.0 // indirect
 	github.com/ipfs/go-ipfs-util v0.0.3 // indirect

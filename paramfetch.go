@@ -15,12 +15,12 @@ import (
 	"sync"
 	"time"
 
+	pb "github.com/cheggaaa/pb/v3"
 	fslock "github.com/ipfs/go-fs-lock"
 	logging "github.com/ipfs/go-log/v2"
 	"go.uber.org/multierr"
 	"golang.org/x/crypto/blake2b"
 	"golang.org/x/xerrors"
-	pb "gopkg.in/cheggaaa/pb.v1"
 )
 
 var log = logging.Logger("paramfetch")
@@ -275,11 +275,8 @@ func doFetch(ctx context.Context, out string, info paramFile) error {
 	}
 	defer resp.Body.Close()
 
-	bar := pb.New64(fStat.Size() + resp.ContentLength)
-	bar.Set64(fStat.Size())
-	bar.Units = pb.U_BYTES
-	bar.ShowSpeed = true
-	bar.Start()
+	bar := pb.New64(fStat.Size() + resp.ContentLength).
+		SetCurrent(fStat.Size()).Start()
 
 	_, err = io.Copy(outf, bar.NewProxyReader(resp.Body))
 
