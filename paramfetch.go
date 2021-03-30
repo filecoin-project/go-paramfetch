@@ -50,7 +50,7 @@ func getParamDir() string {
 	return os.Getenv(dirEnv)
 }
 
-func GetParams(ctx context.Context, paramBytes []byte, storageSize uint64) error {
+func GetParams(ctx context.Context, paramBytes []byte, srsBytes []byte, storageSize uint64) error {
 	if err := os.Mkdir(getParamDir(), 0755); err != nil && !os.IsExist(err) {
 		return err
 	}
@@ -68,6 +68,16 @@ func GetParams(ctx context.Context, paramBytes []byte, storageSize uint64) error
 			continue
 		}
 
+		ft.maybeFetchAsync(ctx, name, info)
+	}
+
+	var srs map[string]paramFile
+
+	if err := json.Unmarshal(srsBytes, &srs); err != nil {
+		return err
+	}
+
+	for name, info := range srs {
 		ft.maybeFetchAsync(ctx, name, info)
 	}
 

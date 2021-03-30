@@ -33,6 +33,7 @@ func cancelOnSignal(ctx context.Context, sig ...os.Signal) context.Context {
 func main() {
 	sectorSize := os.Args[1]
 	paramsJsonPath := os.Args[2]
+	srsJsonPath := os.Args[2]
 
 	n, err := strconv.ParseUint(sectorSize, 10, 64)
 	check(err)
@@ -40,8 +41,11 @@ func main() {
 	dat, err := ioutil.ReadFile(paramsJsonPath)
 	check(err)
 
+	datSrs, err := ioutil.ReadFile(srsJsonPath)
+	check(err)
+
 	ctx := cancelOnSignal(context.TODO(), syscall.SIGTERM, syscall.SIGINT, syscall.SIGHUP)
 
-	err = build.GetParams(ctx, dat, n)
+	err = build.GetParams(ctx, dat, datSrs, n)
 	check(err)
 }
