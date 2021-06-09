@@ -13,11 +13,11 @@ import (
 	"strings"
 	"sync"
 
+	pb "github.com/cheggaaa/pb/v3"
 	logging "github.com/ipfs/go-log"
 	"github.com/minio/blake2b-simd"
 	"go.uber.org/multierr"
 	"golang.org/x/xerrors"
-	pb "gopkg.in/cheggaaa/pb.v1"
 )
 
 var log = logging.Logger("build")
@@ -213,11 +213,8 @@ func doFetch(ctx context.Context, out string, info paramFile) error {
 	}
 	defer resp.Body.Close()
 
-	bar := pb.New64(fStat.Size() + resp.ContentLength)
-	bar.Set64(fStat.Size())
-	bar.Units = pb.U_BYTES
-	bar.ShowSpeed = true
-	bar.Start()
+	bar := pb.New64(fStat.Size() + resp.ContentLength).
+		SetCurrent(fStat.Size()).Start()
 
 	_, err = io.Copy(outf, bar.NewProxyReader(resp.Body))
 
