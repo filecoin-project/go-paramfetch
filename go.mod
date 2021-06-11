@@ -8,6 +8,7 @@ require (
 	github.com/mattn/go-colorable v0.1.4 // indirect
 	github.com/mattn/go-runewidth v0.0.7 // indirect
 	github.com/minio/blake2b-simd v0.0.0-20160723061019-3f5f724cb5b1
+	github.com/stretchr/testify v1.7.0 // indirect
 	go.uber.org/multierr v1.4.0
 	golang.org/x/xerrors v0.0.0-20191204190536-9bdfabe68543
 	gopkg.in/cheggaaa/pb.v1 v1.0.28
