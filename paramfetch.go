@@ -1,4 +1,4 @@
-package build
+package paramfetch
 
 import (
 	"context"
@@ -12,20 +12,24 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
-	logging "github.com/ipfs/go-log"
+	fslock "github.com/ipfs/go-fs-lock"
+	logging "github.com/ipfs/go-log/v2"
 	"github.com/minio/blake2b-simd"
 	"go.uber.org/multierr"
 	"golang.org/x/xerrors"
 	pb "gopkg.in/cheggaaa/pb.v1"
 )
 
-var log = logging.Logger("build")
+var log = logging.Logger("paramfetch")
 
 //const gateway = "http://198.211.99.118/ipfs/"
 const gateway = "https://proofs.filecoin.io/ipfs/"
 const paramdir = "/var/tmp/filecoin-proof-parameters"
 const dirEnv = "FIL_PROOFS_PARAMETER_CACHE"
+const lockFile = "fetch.lock"
+const lockRetry = time.Second * 10
 
 var checked = map[string]struct{}{}
 var checkedLk sync.Mutex
@@ -102,6 +106,37 @@ func (ft *fetch) maybeFetchAsync(ctx context.Context, name string, info paramFil
 
 		ft.fetchLk.Lock()
 		defer ft.fetchLk.Unlock()
+
+		var lockfail bool
+		var unlocker io.Closer
+		for {
+			unlocker, err = fslock.Lock(getParamDir(), lockFile)
+			if err == nil {
+				break
+			}
+
+			lockfail = true
+
+			le := fslock.LockedError("")
+			if xerrors.As(err, &le) {
+				log.Warnf("acquiring filesystem fetch lock: %s; will retry in %s", err, lockRetry)
+				time.Sleep(lockRetry)
+				continue
+			}
+			ft.errs = append(ft.errs, xerrors.Errorf("acquiring filesystem fetch lock: %w", err))
+			return
+		}
+		defer func() {
+			err := unlocker.Close()
+			if err != nil {
+				log.Errorw("unlock fs lock", "error", err)
+			}
+		}()
+		if lockfail {
+			// we've managed to get the lock, but we need to re-check file contents - maybe it's fetched now
+			ft.maybeFetchAsync(ctx, name, info)
+			return
+		}
 
 		if err := doFetch(ctx, path, info); err != nil {
 			ft.errs = append(ft.errs, xerrors.Errorf("fetching file %s failed: %w", path, err))
