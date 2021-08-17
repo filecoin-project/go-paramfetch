@@ -33,7 +33,7 @@ func cancelOnSignal(ctx context.Context, sig ...os.Signal) context.Context {
 func main() {
 	sectorSize := os.Args[1]
 	paramsJsonPath := os.Args[2]
-	srsJsonPath := os.Args[2]
+	srsJsonPath := os.Args[3]
 
 	n, err := strconv.ParseUint(sectorSize, 10, 64)
 	check(err)
