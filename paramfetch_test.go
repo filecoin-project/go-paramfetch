@@ -2,8 +2,10 @@ package paramfetch
 
 import (
 	"context"
+	"encoding/json"
 	"io/ioutil"
 	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 
@@ -81,4 +83,30 @@ func TestGetParamsParallel(t *testing.T) {
 		}()
 	}
 	wg.Wait()
+}
+
+func TestCheckFileIgnoresNonVKExtension(t *testing.T) {
+	const mockParamInfoBytes = `{
+			"cid": "Qmxxxxxdoesntexist",
+			"digest": "0e0958009936b9d5e515ec97b8cb792d",
+			"sector_size": 2048
+	}`
+	var mockParamInfo paramFile
+	if err := json.Unmarshal([]byte(mockParamInfoBytes), &mockParamInfo); err != nil {
+		require.NoError(t, err)
+	}
+	ft := &fetch{}
+
+	err := os.Setenv("TRUST_PARAMS", "1")
+	require.NoError(t, err)
+	defer func() {
+		err := os.Unsetenv("TRUST_PARAMS")
+		assert.NoError(t, err)
+	}()
+
+	err = ft.checkFile(filepath.Join(".", "should_ignore.params"), mockParamInfo)
+	assert.NoError(t, err)
+
+	err = ft.checkFile(filepath.Join(".", "should_check_and_fail.vk"), mockParamInfo)
+	assert.Error(t, err)
 }

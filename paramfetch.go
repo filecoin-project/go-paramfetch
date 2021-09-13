@@ -154,7 +154,8 @@ func (ft *fetch) maybeFetchAsync(ctx context.Context, name string, info paramFil
 }
 
 func (ft *fetch) checkFile(path string, info paramFile) error {
-	if os.Getenv("TRUST_PARAMS") == "1" {
+	if os.Getenv("TRUST_PARAMS") == "1" && !strings.HasSuffix(path, "vk") {
+		log.Debugf("Skipping param check: %s", path)
 		log.Warn("Assuming parameter files are ok. DO NOT USE IN PRODUCTION")
 		return nil
 	}
