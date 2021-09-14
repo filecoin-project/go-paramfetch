@@ -153,8 +153,19 @@ func (ft *fetch) maybeFetchAsync(ctx context.Context, name string, info paramFil
 	}()
 }
 
+func hasTrustableExtension(path string) bool {
+	// known extensions include "vk", "srs", and "params"
+	// expected to only treat "params" ext as trustable
+	// by blacklisting "vk" and "srs" to ensure new exts
+	// will not change the behavior
+
+	// we must always check "vk" and "srs" files to ensure
+	// only valid blocks are built upon
+	return !strings.HasSuffix(path, "vk") && !strings.HasSuffix(path, "srs")
+}
+
 func (ft *fetch) checkFile(path string, info paramFile) error {
-	if os.Getenv("TRUST_PARAMS") == "1" && !strings.HasSuffix(path, "vk") {
+	if os.Getenv("TRUST_PARAMS") == "1" && hasTrustableExtension(path) {
 		log.Debugf("Skipping param check: %s", path)
 		log.Warn("Assuming parameter files are ok. DO NOT USE IN PRODUCTION")
 		return nil

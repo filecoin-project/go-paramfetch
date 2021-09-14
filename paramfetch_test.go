@@ -85,7 +85,7 @@ func TestGetParamsParallel(t *testing.T) {
 	wg.Wait()
 }
 
-func TestCheckFileIgnoresNonVKExtension(t *testing.T) {
+func TestCheckFileIgnoresUntrustableExtension(t *testing.T) {
 	const mockParamInfoBytes = `{
 			"cid": "Qmxxxxxdoesntexist",
 			"digest": "0e0958009936b9d5e515ec97b8cb792d",
@@ -108,5 +108,8 @@ func TestCheckFileIgnoresNonVKExtension(t *testing.T) {
 	assert.NoError(t, err)
 
 	err = ft.checkFile(filepath.Join(".", "should_check_and_fail.vk"), mockParamInfo)
+	assert.Error(t, err)
+
+	err = ft.checkFile(filepath.Join(".", "also_check_and_fail.srs"), mockParamInfo)
 	assert.Error(t, err)
 }
