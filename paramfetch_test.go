@@ -104,8 +104,9 @@ func TestCheckFileIgnoresUntrustableExtension(t *testing.T) {
 		assert.NoError(t, err)
 	}()
 
-	err = ft.checkFile(filepath.Join(".", "should_ignore.params"), mockParamInfo)
-	assert.NoError(t, err)
+	// TODO: Return when TRUST_PARAMS has been re-enabled
+	//err = ft.checkFile(filepath.Join(".", "should_ignore.params"), mockParamInfo)
+	//assert.NoError(t, err)
 
 	err = ft.checkFile(filepath.Join(".", "should_check_and_fail.vk"), mockParamInfo)
 	assert.Error(t, err)

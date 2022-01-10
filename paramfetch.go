@@ -162,9 +162,9 @@ func hasTrustableExtension(path string) bool {
 
 func (ft *fetch) checkFile(path string, info paramFile) error {
 	if os.Getenv("TRUST_PARAMS") == "1" && hasTrustableExtension(path) {
-		log.Debugf("Skipping param check: %s", path)
-		log.Warn("Assuming parameter files are ok. DO NOT USE IN PRODUCTION")
-		return nil
+		log.Warn("TRUST_PARAMS has been disabled around the SnapDeals upgrade, checking params...")
+		//log.Debugf("Skipping param check: %s", path)
+		//log.Warn("Assuming parameter files are ok. DO NOT USE IN PRODUCTION")
 	}
 
 	checkedLk.Lock()
