@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/url"
@@ -41,8 +42,7 @@ type paramFile struct {
 }
 
 type fetch struct {
-	wg      sync.WaitGroup
-	fetchLk sync.Mutex
+	wg sync.WaitGroup
 
 	errs []error
 }
@@ -88,8 +88,19 @@ func GetParams(ctx context.Context, paramBytes []byte, srsBytes []byte, storageS
 	return ft.wait(ctx)
 }
 
+var startedFetching = map[string]bool{}
+var fetchLk sync.Mutex
+
 func (ft *fetch) maybeFetchAsync(ctx context.Context, name string, info paramFile) {
 	ft.wg.Add(1)
+
+	fetchLk.Lock() // Protects startedFetching
+	defer fetchLk.Unlock()
+	if startedFetching[name] {
+		ft.wg.Done()
+		return
+	}
+	startedFetching[name] = true
 
 	go func() {
 		defer ft.wg.Done()
@@ -104,27 +115,21 @@ func (ft *fetch) maybeFetchAsync(ctx context.Context, name string, info paramFil
 			return
 		}
 
-		ft.fetchLk.Lock()
-		defer ft.fetchLk.Unlock()
-
 		var lockfail bool
-		var unlocker io.Closer
-		for {
-			unlocker, err = fslock.Lock(getParamDir(), lockFile)
-			if err == nil {
-				break
-			}
-
+	tryLock:
+		unlocker, err := fslock.Lock(getParamDir(), name+"."+lockFile)
+		if err != nil {
 			lockfail = true
 
 			le := fslock.LockedError("")
-			if xerrors.As(err, &le) {
+			if errors.As(err, &le) {
 				log.Warnf("acquiring filesystem fetch lock: %s; will retry in %s", err, lockRetry)
 				time.Sleep(lockRetry)
-				continue
+				goto tryLock
 			}
+			log.Info("lock error: ", err)
 			ft.errs = append(ft.errs, xerrors.Errorf("acquiring filesystem fetch lock: %w", err))
-			return
+			goto tryLock
 		}
 		defer func() {
 			err := unlocker.Close()
@@ -138,33 +143,25 @@ func (ft *fetch) maybeFetchAsync(ctx context.Context, name string, info paramFil
 			return
 		}
 
-		if err := doFetch(ctx, path, info); err != nil {
-			ft.errs = append(ft.errs, xerrors.Errorf("fetching file %s failed: %w", path, err))
-			return
-		}
-		err = ft.checkFile(path, info)
-		if err != nil {
-			log.Errorf("sanity checking fetched file failed, removing and retrying: %w", err)
-			// remove and retry once more
-			err := os.Remove(path)
-			if err != nil {
-				ft.errs = append(ft.errs, xerrors.Errorf("remove file %s failed: %w", path, err))
-				return
-			}
-
+		for i := 0; i < 2; i++ {
 			if err := doFetch(ctx, path, info); err != nil {
 				ft.errs = append(ft.errs, xerrors.Errorf("fetching file %s failed: %w", path, err))
 				return
 			}
-
 			err = ft.checkFile(path, info)
 			if err != nil {
-				ft.errs = append(ft.errs, xerrors.Errorf("checking file %s failed: %w", path, err))
+				if i == 0 {
+					log.Errorf("sanity checking fetched file failed, removing and retrying: %w", err)
+				}
+				// remove and retry once more
 				err := os.Remove(path)
 				if err != nil {
 					ft.errs = append(ft.errs, xerrors.Errorf("remove file %s failed: %w", path, err))
+					return
 				}
+				continue
 			}
+			return
 		}
 	}()
 }
