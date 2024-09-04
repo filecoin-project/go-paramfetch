@@ -3,15 +3,14 @@ package paramfetch
 import (
 	"context"
 	"encoding/json"
-	"io/ioutil"
 	"os"
 	"path/filepath"
-	"sync"
 	"testing"
 
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sync/errgroup"
 )
 
 func init() {
@@ -46,43 +45,24 @@ const params = `{
 const srs = `{}`
 
 func TestGetParams(t *testing.T) {
-	pd, err := ioutil.TempDir("", "paramfetch-test-")
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		require.NoError(t, os.RemoveAll(pd))
-	})
+	pd := t.TempDir()
 	require.NoError(t, os.Setenv(dirEnv, pd))
 
-	ctx := context.TODO()
-
-	err = GetParams(ctx, []byte(params), []byte(srs), 0)
+	err := GetParams(context.Background(), []byte(params), []byte(srs), 0)
 	require.NoError(t, err)
 }
 
 func TestGetParamsParallel(t *testing.T) {
-	pd, err := ioutil.TempDir("", "paramfetch-test-")
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		require.NoError(t, os.RemoveAll(pd))
-	})
+	pd := t.TempDir()
 	require.NoError(t, os.Setenv(dirEnv, pd))
 
-	ctx := context.TODO()
+	eg, ctx := errgroup.WithContext(context.Background())
 
-	n := 4
-
-	var wg sync.WaitGroup
-	wg.Add(n)
-
-	for i := 0; i < n; i++ {
-		go func() {
-			defer wg.Done()
-
-			err := GetParams(ctx, []byte(params), []byte(srs), 0)
-			assert.NoError(t, err)
-		}()
+	for i := 0; i < 4; i++ {
+		eg.Go(func() error { return GetParams(ctx, []byte(params), []byte(srs), 0) })
 	}
-	wg.Wait()
+
+	require.NoError(t, eg.Wait())
 }
 
 func TestCheckFileIgnoresUntrustableExtension(t *testing.T) {
