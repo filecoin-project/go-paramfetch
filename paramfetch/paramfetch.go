@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"io/ioutil"
 	"os"
 	"os/signal"
 	"strconv"
@@ -38,10 +37,10 @@ func main() {
 	n, err := strconv.ParseUint(sectorSize, 10, 64)
 	check(err)
 
-	dat, err := ioutil.ReadFile(paramsJsonPath)
+	dat, err := os.ReadFile(paramsJsonPath)
 	check(err)
 
-	datSrs, err := ioutil.ReadFile(srsJsonPath)
+	datSrs, err := os.ReadFile(srsJsonPath)
 	check(err)
 
 	ctx := cancelOnSignal(context.TODO(), syscall.SIGTERM, syscall.SIGINT, syscall.SIGHUP)

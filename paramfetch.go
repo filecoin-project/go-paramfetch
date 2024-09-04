@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/url"
@@ -16,15 +17,15 @@ import (
 
 	fslock "github.com/ipfs/go-fs-lock"
 	logging "github.com/ipfs/go-log/v2"
-	"github.com/minio/blake2b-simd"
 	"go.uber.org/multierr"
+	"golang.org/x/crypto/blake2b"
 	"golang.org/x/xerrors"
 	pb "gopkg.in/cheggaaa/pb.v1"
 )
 
 var log = logging.Logger("paramfetch")
 
-//const gateway = "http://198.211.99.118/ipfs/"
+// const gateway = "http://198.211.99.118/ipfs/"
 const gateway = "https://proofs.filecoin.io/ipfs/"
 const paramdir = "/var/tmp/filecoin-proof-parameters"
 const dirEnv = "FIL_PROOFS_PARAMETER_CACHE"
@@ -118,7 +119,7 @@ func (ft *fetch) maybeFetchAsync(ctx context.Context, name string, info paramFil
 			lockfail = true
 
 			le := fslock.LockedError("")
-			if xerrors.As(err, &le) {
+			if errors.As(err, &le) {
 				log.Warnf("acquiring filesystem fetch lock: %s; will retry in %s", err, lockRetry)
 				time.Sleep(lockRetry)
 				continue
@@ -198,7 +199,7 @@ func (ft *fetch) checkFile(path string, info paramFile) error {
 	}
 	defer f.Close()
 
-	h := blake2b.New512()
+	h, _ := blake2b.New512(nil) // errors only happen on invalid, non-nil key
 	if _, err := io.Copy(h, f); err != nil {
 		return err
 	}
