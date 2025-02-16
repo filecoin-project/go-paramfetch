@@ -1,6 +1,6 @@
 module github.com/filecoin-project/go-paramfetch
 
-go 1.22
+go 1.23
 
 require (
 	github.com/cheggaaa/pb/v3 v3.1.5
