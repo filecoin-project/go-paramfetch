@@ -134,9 +134,14 @@ func (ft *fetch) maybeFetchAsync(ctx context.Context, name string, info paramFil
 			}
 		}()
 		if lockfail {
-			// we've managed to get the lock, but we need to re-check file contents - maybe it's fetched now
-			ft.maybeFetchAsync(ctx, name, info)
-			return
+			// Another caller may have completed the file while we were waiting.
+			err = checkFile(path, info)
+			if !os.IsNotExist(err) && err != nil {
+				log.Warn(err)
+			}
+			if err == nil {
+				return
+			}
 		}
 
 		if err := doFetch(ctx, path, info); err != nil {
@@ -177,7 +182,7 @@ func hasTrustableExtension(path string) bool {
 	return strings.HasSuffix(path, "params")
 }
 
-func (ft *fetch) checkFile(path string, info paramFile) error {
+func checkFile(path string, info paramFile) error {
 	isSnapParam := strings.HasPrefix(filepath.Base(path), "v28-empty-sector-update")
 
 	if !isSnapParam && os.Getenv("TRUST_PARAMS") == "1" && hasTrustableExtension(path) {
@@ -217,6 +222,10 @@ func (ft *fetch) checkFile(path string, info paramFile) error {
 	}
 
 	return xerrors.Errorf("checksum mismatch in param file %s, %s != %s", path, strSum, info.Digest)
+}
+
+func (ft *fetch) checkFile(path string, info paramFile) error {
+	return checkFile(path, info)
 }
 
 func (ft *fetch) wait(ctx context.Context) error {
@@ -274,6 +283,14 @@ func doFetch(ctx context.Context, out string, info paramFile) error {
 		return err
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusRequestedRangeNotSatisfiable {
+		if err := checkFile(out, info); err == nil {
+			return nil
+		} else {
+			return xerrors.Errorf("fetching file from %s: %s (local file verification failed: %w)", url, resp.Status, err)
+		}
+	}
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusPartialContent {
 		return xerrors.Errorf("fetching file from %s: %s", url, resp.Status)

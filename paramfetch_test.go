@@ -2,6 +2,7 @@ package paramfetch
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -14,6 +15,7 @@ import (
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/crypto/blake2b"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -138,4 +140,73 @@ func TestDoFetchBadStatusCode(t *testing.T) {
 				"error should not mention checksum mismatch, got: %s", errMsg)
 		})
 	}
+}
+
+func TestDoFetchTreats416AsAlreadyComplete(t *testing.T) {
+	content := []byte("already complete param data")
+	rangeHeader := fmt.Sprintf("bytes=%d-", len(content))
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, rangeHeader, r.Header.Get("Range"))
+		w.WriteHeader(http.StatusRequestedRangeNotSatisfiable)
+	}))
+	defer ts.Close()
+
+	t.Setenv("IPFS_GATEWAY", ts.URL+"/ipfs/")
+
+	tmpDir := t.TempDir()
+	outPath := filepath.Join(tmpDir, "test-param-file")
+	require.NoError(t, os.WriteFile(outPath, content, 0644))
+
+	info := paramFile{
+		Cid:    "QmFakeCid",
+		Digest: testDigest(t, content),
+	}
+
+	require.NoError(t, doFetch(context.Background(), outPath, info))
+
+	got, err := os.ReadFile(outPath)
+	require.NoError(t, err)
+	assert.Equal(t, content, got)
+}
+
+func TestDoFetchReturnsErrorOn416ForInvalidLocalFile(t *testing.T) {
+	fullContent := []byte("complete param data")
+	partialContent := fullContent[:8]
+	rangeHeader := fmt.Sprintf("bytes=%d-", len(partialContent))
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, rangeHeader, r.Header.Get("Range"))
+		w.WriteHeader(http.StatusRequestedRangeNotSatisfiable)
+	}))
+	defer ts.Close()
+
+	t.Setenv("IPFS_GATEWAY", ts.URL+"/ipfs/")
+
+	tmpDir := t.TempDir()
+	outPath := filepath.Join(tmpDir, "test-param-file")
+	require.NoError(t, os.WriteFile(outPath, partialContent, 0644))
+
+	info := paramFile{
+		Cid:    "QmFakeCid",
+		Digest: testDigest(t, fullContent),
+	}
+
+	err := doFetch(context.Background(), outPath, info)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "416 Requested Range Not Satisfiable")
+	assert.Contains(t, err.Error(), "local file verification failed")
+}
+
+func testDigest(t *testing.T, data []byte) string {
+	t.Helper()
+
+	h, err := blake2b.New512(nil)
+	require.NoError(t, err)
+
+	_, err = h.Write(data)
+	require.NoError(t, err)
+
+	sum := h.Sum(nil)
+	return hex.EncodeToString(sum[:16])
 }
