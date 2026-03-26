@@ -275,6 +275,10 @@ func doFetch(ctx context.Context, out string, info paramFile) error {
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusPartialContent {
+		return xerrors.Errorf("fetching file from %s: %s", url, resp.Status)
+	}
+
 	bar := pb.New64(fStat.Size() + resp.ContentLength).
 		SetCurrent(fStat.Size()).Start()
 

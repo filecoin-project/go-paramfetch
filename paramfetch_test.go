@@ -3,8 +3,12 @@ package paramfetch
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	logging "github.com/ipfs/go-log/v2"
@@ -92,4 +96,46 @@ func TestCheckFileIgnoresUntrustableExtension(t *testing.T) {
 
 	err = ft.checkFile(filepath.Join(".", "also_check_and_fail.srs"), mockParamInfo)
 	assert.Error(t, err)
+}
+
+func TestDoFetchBadStatusCode(t *testing.T) {
+	cases := []struct {
+		name string
+		code int
+	}{
+		{"BadRequest", http.StatusBadRequest},
+		{"Forbidden", http.StatusForbidden},
+		{"NotFound", http.StatusNotFound},
+		{"InternalServerError", http.StatusInternalServerError},
+		{"BadGateway", http.StatusBadGateway},
+		{"ServiceUnavailable", http.StatusServiceUnavailable},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(tc.code)
+			}))
+			defer ts.Close()
+
+			t.Setenv("IPFS_GATEWAY", ts.URL+"/ipfs/")
+
+			tmpDir := t.TempDir()
+			outPath := filepath.Join(tmpDir, "test-param-file")
+
+			info := paramFile{
+				Cid:    "QmFakeCid",
+				Digest: "0000000000000000",
+			}
+
+			err := doFetch(context.Background(), outPath, info)
+			require.Error(t, err)
+
+			errMsg := fmt.Sprintf("%v", err)
+			assert.True(t, strings.Contains(errMsg, fmt.Sprintf("%d", tc.code)),
+				"error should contain HTTP status code %d, got: %s", tc.code, errMsg)
+			assert.False(t, strings.Contains(errMsg, "checksum"),
+				"error should not mention checksum mismatch, got: %s", errMsg)
+		})
+	}
 }
