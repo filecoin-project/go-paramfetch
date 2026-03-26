@@ -108,6 +108,12 @@ func (ft *fetch) maybeFetchAsync(ctx context.Context, name string, info paramFil
 		ft.fetchLk.Lock()
 		defer ft.fetchLk.Unlock()
 
+		// Re-check after acquiring the in-process mutex — another goroutine
+		// may have already fetched the file while we waited.
+		if err := ft.checkFile(path, info); err == nil {
+			return
+		}
+
 		var lockfail bool
 		var unlocker io.Closer
 		for {
@@ -274,6 +280,10 @@ func doFetch(ctx context.Context, out string, info paramFile) error {
 		return err
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusPartialContent {
+		return xerrors.Errorf("fetching file from %s: %s", url, resp.Status)
+	}
 
 	bar := pb.New64(fStat.Size() + resp.ContentLength).
 		SetCurrent(fStat.Size()).Start()
