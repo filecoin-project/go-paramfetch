@@ -34,7 +34,7 @@ var log = logging.Logger("paramfetch")
 // so that <gateway><cid> resolves to the file.
 var defaultGateways = []string{
 	// Forest (ChainSafe)
-	"https://filecoin-proof-parameters.chainsafe.dev/ipfs/",
+	"https://filecoin-proofs.chainsafe.dev/ipfs/",
 	// Curio
 	"https://pub-08ae819c828244bdbe5f615fd8c5e144.r2.dev/ipfs/",
 }
