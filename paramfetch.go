@@ -25,8 +25,20 @@ import (
 
 var log = logging.Logger("paramfetch")
 
-// const gateway = "http://198.211.99.118/ipfs/"
-const gateway = "https://proofs.filecoin.io/ipfs/"
+// Retired gateways:
+//
+//	const gateway = "http://198.211.99.118/ipfs/"
+//	const gateway = "https://proofs.filecoin.io/ipfs/" // cluster being shut down
+
+// defaultGateways are tried in order. Each entry must serve files keyed by CID,
+// so that <gateway><cid> resolves to the file.
+var defaultGateways = []string{
+	// Forest (ChainSafe)
+	"https://filecoin-proof-parameters.chainsafe.dev/ipfs/",
+	// Curio
+	"https://pub-08ae819c828244bdbe5f615fd8c5e144.r2.dev/ipfs/",
+}
+
 const paramdir = "/var/tmp/filecoin-proof-parameters"
 const dirEnv = "FIL_PROOFS_PARAMETER_CACHE"
 const lockFile = "fetch.lock"
@@ -145,33 +157,9 @@ func (ft *fetch) maybeFetchAsync(ctx context.Context, name string, info paramFil
 			return
 		}
 
-		if err := doFetch(ctx, path, info); err != nil {
+		if err := ft.doFetch(ctx, path, info); err != nil {
 			ft.errs = append(ft.errs, xerrors.Errorf("fetching file %s failed: %w", path, err))
 			return
-		}
-		err = ft.checkFile(path, info)
-		if err != nil {
-			log.Errorf("sanity checking fetched file failed, removing and retrying: %w", err)
-			// remove and retry once more
-			err := os.Remove(path)
-			if err != nil {
-				ft.errs = append(ft.errs, xerrors.Errorf("remove file %s failed: %w", path, err))
-				return
-			}
-
-			if err := doFetch(ctx, path, info); err != nil {
-				ft.errs = append(ft.errs, xerrors.Errorf("fetching file %s failed: %w", path, err))
-				return
-			}
-
-			err = ft.checkFile(path, info)
-			if err != nil {
-				ft.errs = append(ft.errs, xerrors.Errorf("checking file %s failed: %w", path, err))
-				err := os.Remove(path)
-				if err != nil {
-					ft.errs = append(ft.errs, xerrors.Errorf("remove file %s failed: %w", path, err))
-				}
-			}
 		}
 	}()
 }
@@ -243,54 +231,139 @@ func (ft *fetch) wait(ctx context.Context) error {
 	return multierr.Combine(ft.errs...)
 }
 
-func doFetch(ctx context.Context, out string, info paramFile) error {
-	gw := os.Getenv("IPFS_GATEWAY")
-	if gw == "" {
-		gw = gateway
+// gateways returns the sources to try, in order. An explicit IPFS_GATEWAY
+// replaces the defaults rather than preceding them: a node pointed at a private
+// mirror must not fall back to public hosts.
+func gateways() []string {
+	if gw := os.Getenv("IPFS_GATEWAY"); gw != "" {
+		return []string{gw}
 	}
+	return defaultGateways
+}
+
+func (ft *fetch) doFetch(ctx context.Context, out string, info paramFile) error {
+	gws := gateways()
+	if len(gws) == 0 {
+		return xerrors.New("no gateways configured")
+	}
+
+	var errs []error
+	for i, gw := range gws {
+		if err := ctx.Err(); err != nil {
+			errs = append(errs, err)
+			break
+		}
+
+		err := ft.fetchFromGateway(ctx, out, gw, info)
+		if err == nil {
+			return nil
+		}
+
+		log.Warnf("fetching %s from %s failed (source %d of %d): %s", out, gw, i+1, len(gws), err)
+		errs = append(errs, err)
+	}
+
+	return multierr.Combine(errs...)
+}
+
+// errUnresumable means a gateway rejected a nonzero resume offset.
+var errUnresumable = errors.New("resume offset rejected")
+
+// fetchFromGateway verifies the download and retries from scratch at most once
+// if the gateway rejects the resume offset or the resumed content fails validation.
+func (ft *fetch) fetchFromGateway(ctx context.Context, out, gw string, info paramFile) error {
+	for attempt := 0; ; attempt++ {
+		resumed, err := fetchOnce(ctx, out, gw, info)
+		retry := resumed
+		if errors.Is(err, errUnresumable) {
+			retry = true
+		} else if err != nil {
+			return err
+		} else if err = ft.checkFile(out, info); err == nil {
+			return nil
+		}
+
+		// Neither a rejected offset nor invalid content should be reused.
+		if rmErr := os.Remove(out); rmErr != nil && !os.IsNotExist(rmErr) {
+			return multierr.Combine(err, rmErr)
+		}
+		if !retry || attempt > 0 {
+			return err
+		}
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return multierr.Combine(err, ctxErr)
+		}
+		log.Warnf("resuming %s from %s failed: %s; retrying the whole file", out, gw, err)
+	}
+}
+
+// fetchOnce reports whether a successful download retained any existing bytes.
+func fetchOnce(ctx context.Context, out, gw string, info paramFile) (bool, error) {
 	log.Infof("Fetching %s from %s", out, gw)
 
 	outf, err := os.OpenFile(out, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
 	if err != nil {
-		return err
+		return false, err
 	}
 	defer outf.Close()
 
 	fStat, err := outf.Stat()
 	if err != nil {
-		return err
+		return false, err
 	}
+	haveBytes := fStat.Size()
+
 	header := http.Header{}
-	header.Set("Range", "bytes="+strconv.FormatInt(fStat.Size(), 10)+"-")
+	header.Set("Range", "bytes="+strconv.FormatInt(haveBytes, 10)+"-")
 	url, err := url.Parse(gw + info.Cid)
 	if err != nil {
-		return err
+		return false, err
 	}
 	log.Infof("GET %s", url)
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url.String(), nil)
 	if err != nil {
-		return err
+		return false, err
 	}
 	req.Close = true
 	req.Header = header
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return err
+		return false, err
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusPartialContent {
-		return xerrors.Errorf("fetching file from %s: %s", url, resp.Status)
+	if resp.StatusCode == http.StatusRequestedRangeNotSatisfiable && haveBytes > 0 {
+		return false, errUnresumable
 	}
 
-	bar := pb.New64(fStat.Size() + resp.ContentLength).
-		SetCurrent(fStat.Size()).Start()
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusPartialContent {
+		return false, xerrors.Errorf("fetching file from %s: %s", url, resp.Status)
+	}
+
+	if haveBytes > 0 && resp.StatusCode == http.StatusOK {
+		// The gateway ignored the Range header and is sending the whole file.
+		// Appending would corrupt what we already have, so start over.
+		log.Warnf("%s ignored range request for %s, restarting download", gw, out)
+		if err := outf.Truncate(0); err != nil {
+			return false, err
+		}
+		haveBytes = 0
+	}
+
+	bar := pb.New64(haveBytes + resp.ContentLength).
+		SetCurrent(haveBytes).Start()
 
 	_, err = io.Copy(outf, bar.NewProxyReader(resp.Body))
 
 	bar.Finish()
 
-	return err
+	if err != nil {
+		// A read that dies mid-body yields a bare network error, naming neither
+		// the gateway nor the file.
+		return false, xerrors.Errorf("reading %s: %w", url, err)
+	}
+
+	return haveBytes > 0, nil
 }
