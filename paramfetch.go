@@ -248,12 +248,8 @@ func (ft *fetch) doFetch(ctx context.Context, out string, info paramFile) error 
 	}
 
 	var errs []error
-	for i, gw := range gws {
-		if err := ctx.Err(); err != nil {
-			errs = append(errs, err)
-			break
-		}
-
+	for i := 0; i < len(gws) && ctx.Err() == nil; i++ {
+		gw := gws[i]
 		err := ft.fetchFromGateway(ctx, out, gw, info)
 		if err == nil {
 			return nil
@@ -263,7 +259,7 @@ func (ft *fetch) doFetch(ctx context.Context, out string, info paramFile) error 
 		errs = append(errs, err)
 	}
 
-	return multierr.Combine(errs...)
+	return multierr.Combine(append(errs, ctx.Err())...)
 }
 
 // errUnresumable means a gateway rejected a nonzero resume offset.
@@ -342,6 +338,7 @@ func fetchOnce(ctx context.Context, out, gw string, info paramFile) (bool, error
 		return false, xerrors.Errorf("fetching file from %s: %s", url, resp.Status)
 	}
 
+	resumed := haveBytes > 0
 	if haveBytes > 0 && resp.StatusCode == http.StatusOK {
 		// The gateway ignored the Range header and is sending the whole file.
 		// Appending would corrupt what we already have, so start over.
@@ -350,6 +347,7 @@ func fetchOnce(ctx context.Context, out, gw string, info paramFile) (bool, error
 			return false, err
 		}
 		haveBytes = 0
+		resumed = false
 	}
 
 	bar := pb.New64(haveBytes + resp.ContentLength).
@@ -365,5 +363,5 @@ func fetchOnce(ctx context.Context, out, gw string, info paramFile) (bool, error
 		return false, xerrors.Errorf("reading %s: %w", url, err)
 	}
 
-	return haveBytes > 0, nil
+	return resumed, nil
 }
