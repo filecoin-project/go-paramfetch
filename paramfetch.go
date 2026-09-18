@@ -35,8 +35,8 @@ var log = logging.Logger("paramfetch")
 var defaultGateways = []string{
 	// Forest (ChainSafe)
 	"https://filecoin-proofs.chainsafe.dev/ipfs/",
-	// Curio
-	"https://pub-08ae819c828244bdbe5f615fd8c5e144.r2.dev/ipfs/",
+	// FOC SP: https://vault.ezpdpz.net/params.html
+	"https://vault.ezpdpz.net/ipfs/",
 }
 
 const paramdir = "/var/tmp/filecoin-proof-parameters"
